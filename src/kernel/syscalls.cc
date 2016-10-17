@@ -241,6 +241,65 @@ extern "C" int isatty(int fd) {
 //  KABORT1("sbrk"); return (void*)-1;
 //}
 
+
+/**
+   sched_setaffinity
+   
+   changes the affinity mask of process identified by pid, and sets it to the mask pointed at by *mask
+   returns 0 on success, -1 on failure
+   
+   sched_setaffinity fails if the mask includes processors that do not exist in KOS, or if the pid is not 0.
+ */
+extern "C" int sched_setaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask)
+{
+  Thread* target = NULL;
+  int proCount = Machine::getProcessorCount();
+
+  //check if the mask includes processors not in the OS.
+  if( static_cast<unsigned int>(*mask) >= (0x1 << proCount))
+    {
+      errno = EINVAL;
+      return -1; 
+    }
+  
+  if (pid == 0)
+    {
+      target = LocalProcessor::getCurrThread();
+      target->setAffinityMask(*mask);
+      
+    }
+  else
+    {
+      errno = EPERM;
+      return -1;
+    }
+  
+  return 0;
+}
+
+
+/**
+   sched_getaffinity
+
+   returns the mask of the process identified by pid in *mask
+   return 0 if successful, -1 if pid != 0.
+ */
+extern "C" int sched_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask)
+{
+  if (pid == 0)
+    {
+      Thread* current = LocalProcessor::getCurrThread();
+      *mask = current->getAffinityMask();
+    }
+  else
+    {
+      errno = EPERM;
+      return -1;
+    }
+
+  return 0;
+}
+
 void* __dso_handle = nullptr;
 
 typedef ssize_t (*syscall_t)(mword a1, mword a2, mword a3, mword a4, mword a5);
@@ -267,7 +326,9 @@ static const syscall_t syscalls[] = {
   syscall_t(semP),
   syscall_t(semV),
   syscall_t(privilege),
-  syscall_t(_init_sig_handler)
+  syscall_t(_init_sig_handler),
+  syscall_t(sched_setaffinity),
+  syscall_t(sched_getaffinity)
 };
 
 static_assert(sizeof(syscalls)/sizeof(syscall_t) == SyscallNum::max, "syscall list error");
@@ -279,3 +340,4 @@ extern "C" ssize_t syscall_handler(mword x, mword a1, mword a2, mword a3, mword 
   // TODO: check for signals
   return retcode;
 }
+
